@@ -495,10 +495,14 @@
         window.resetGame = async () => {
             if(confirm("모든 데이터를 지울까요? (주의: 참가자 데이터도 완전히 삭제되며 다시 접속해야 합니다)")) {
                 try {
-                    // 1. 상태 문서 초기화
+                    // 🔥 1. GM 화면 즉각 초기화 (시각적 딜레이 제거) 🔥
+                    window.playersData = {};
+                    updateUIBasedOnRole();
+
+                    // 2. 상태 문서 초기화
                     await setDoc(stateDocRef, { phase: 'lobby', selectedUids: [], grindEndTime: null });
                     
-                    // 2. 참가자 컬렉션의 모든 데이터를 긁어와서 하나씩 삭제
+                    // 3. 참가자 컬렉션의 모든 데이터를 긁어와서 하나씩 삭제
                     const querySnapshot = await getDocs(playersColRef);
                     const deletePromises = [];
                     querySnapshot.forEach((d) => {
