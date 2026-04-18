@@ -146,7 +146,8 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // 🔥 getDocs 와 deleteDoc 도구를 임포트하여 강력한 삭제 기능 활성화 🔥
+        import { getFirestore, doc, setDoc, collection, onSnapshot, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const myFirebaseConfig = {
             apiKey: "AIzaSyCfyjgtiDVD4Wsd9iGb9tEdrOGFYxxN2Tw",
@@ -257,6 +258,15 @@
                 querySnapshot.forEach((doc) => {
                     window.playersData[doc.id] = doc.data();
                 });
+                
+                // 🔥 삭제 로직: 내가 참가자인데 명단에서 내 데이터가 사라졌다면 튕겨내기 🔥
+                if (window.myRole === 'player' && window.myUid && !window.playersData[window.myUid]) {
+                    alert("진행자가 게임을 초기화했습니다. 다시 입장해주세요.");
+                    window.myRole = null;
+                    switchScreen('screen-login');
+                    return; // 튕겨낸 후에는 UI 업데이트 중지
+                }
+                
                 updateUIBasedOnRole();
             }, (error) => console.error("Players sync error:", error));
         }
@@ -267,7 +277,6 @@
             if(target) target.classList.add('active'); 
         };
 
-        // 🔥 비밀번호 힌트 문구 제거 🔥
         window.checkGMAndSetRole = () => {
             const pwd = prompt("GM 비밀번호를 입력하세요:");
             if (pwd === "1004") { window.myRole = 'gm'; switchScreen('screen-gm'); updateUIBasedOnRole(); } 
@@ -282,7 +291,6 @@
             const name = document.getElementById('player-name-input').value.trim();
             if(!name) return alert("이름을 입력하세요.");
             document.getElementById('player-name-modal').classList.add('hidden');
-            window.myRole = 'player';
             
             localScore = 0;
             lastSyncedScore = 0;
@@ -296,6 +304,9 @@
                 return; 
             }
             
+            // 데이터 저장이 성공적으로 끝난 뒤에만 역할을 '참가자'로 확정 짓습니다.
+            window.myRole = 'player';
+            document.getElementById('p-my-name').innerText = name; // 내 화면 헤더에 이름 표시
             switchScreen('screen-player');
             startScoreSync();
             setupTapListener(); 
@@ -453,7 +464,6 @@
             try {
                 let updates = { phase: newPhase };
                 
-                // 🔥 광클 단계가 시작되면 종료 시간을 30초 뒤로 세팅합니다.
                 if(newPhase === 'grind') {
                     updates.grindEndTime = Date.now() + 30000;
                 }
@@ -481,12 +491,28 @@
             } catch(e) { console.error(e); }
         };
 
+        // 🔥 모든 데이터를 완전히 지우고 참가자들을 튕겨내는 초기화 로직 🔥
         window.resetGame = async () => {
-            if(confirm("모든 데이터를 지울까요? (주의: 참가자 데이터도 날아갑니다)")) {
+            if(confirm("모든 데이터를 지울까요? (주의: 참가자 데이터도 완전히 삭제되며 다시 접속해야 합니다)")) {
                 try {
-                    await setDoc(stateDocRef, { phase: 'lobby', selectedUids: [] }, { merge: false });
-                    alert("초기화 완료. 참가자들에게 새로고침을 요청하세요.");
-                } catch(e) { console.error(e); }
+                    // 1. 상태 문서 초기화
+                    await setDoc(stateDocRef, { phase: 'lobby', selectedUids: [], grindEndTime: null });
+                    
+                    // 2. 참가자 컬렉션의 모든 데이터를 긁어와서 하나씩 삭제
+                    const querySnapshot = await getDocs(playersColRef);
+                    const deletePromises = [];
+                    querySnapshot.forEach((d) => {
+                        deletePromises.push(deleteDoc(d.ref));
+                    });
+                    
+                    // 삭제 완료 대기
+                    await Promise.all(deletePromises);
+
+                    alert("초기화 완료. 모든 참가자 데이터가 삭제되었습니다.");
+                } catch(e) { 
+                    console.error(e); 
+                    alert("초기화 중 에러가 발생했습니다.");
+                }
             }
         };
 
