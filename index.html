@@ -141,7 +141,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const myFirebaseConfig = {
             apiKey: "AIzaSyCfyjgtiDVD4Wsd9iGb9tEdrOGFYxxN2Tw",
@@ -173,8 +173,9 @@
         let localScore = 0;
         let lastSyncedScore = 0;
         let syncInterval = null;
+        let stateUnsub = null;
+        let playersUnsub = null;
 
-        // 에러를 화면에 띄워주는 안전 함수
         function showAuthError(msg) {
             const overlay = document.getElementById('loading-overlay');
             if(overlay) {
@@ -189,49 +190,59 @@
             }
         }
 
+        // 💡 해결: 무조건 로그인이 끝날 때까지 기다린 후(await) 리스너를 달도록 로직 전면 개편
         const initAuth = async () => {
             try {
-                document.getElementById('loading-msg').innerText = "인증을 진행합니다...";
+                const overlay = document.getElementById('loading-overlay');
+                const msg = document.getElementById('loading-msg');
+                if(overlay) overlay.classList.remove('hidden');
+                if(msg) msg.innerText = "보안 인증을 진행합니다...";
+
+                // 1. 인증 대기 (Race Condition 원천 차단)
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
                     await signInAnonymously(auth);
                 }
+
+                // 2. 인증 완료 확인 후 리스너 하나만 안전하게 등록
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        window.myUid = user.uid;
+                        if(overlay) overlay.classList.add('hidden');
+                        switchScreen('screen-login');
+                        setupRealtimeListeners(user);
+                    }
+                });
+
             } catch (error) { 
                 console.error("Auth error:", error); 
                 showAuthError(error.message);
             }
         };
 
-        // 타이밍 꼬임 방지를 위해 즉시 실행
-        initAuth();
-
-        onAuthStateChanged(auth, (user) => {
-            if (user) { 
-                window.myUid = user.uid; 
-                const overlay = document.getElementById('loading-overlay');
-                if(overlay) overlay.classList.add('hidden'); 
-                
-                switchScreen('screen-login'); 
-                setupRealtimeListeners(user); 
-            }
-        });
+        // DOM이 모두 로드된 후 시작 (안정성 극대화)
+        window.addEventListener('DOMContentLoaded', initAuth);
 
         async function setupRealtimeListeners(user) {
             if (!user) return;
             
-            onSnapshot(stateDocRef, async (docSnap) => {
+            // 중복 실행 방지를 위해 기존 리스너 해제
+            if (stateUnsub) stateUnsub();
+            if (playersUnsub) playersUnsub();
+            
+            stateUnsub = onSnapshot(stateDocRef, async (docSnap) => {
                 if (docSnap.exists()) { 
                     window.gameState = docSnap.data(); 
                     updateUIBasedOnRole(); 
                 } else {
                     try {
-                        await setDoc(stateDocRef, { phase: 'lobby', selectedUids: [] });
+                        await setDoc(stateDocRef, { phase: 'lobby', selectedUids: [] }, { merge: true });
                     } catch(e) { console.error("초기 상태 생성 실패", e); }
                 }
             }, (error) => console.error("State sync error:", error));
 
-            onSnapshot(playersColRef, (querySnapshot) => {
+            playersUnsub = onSnapshot(playersColRef, (querySnapshot) => {
                 window.playersData = {};
                 querySnapshot.forEach((doc) => {
                     window.playersData[doc.id] = doc.data();
@@ -264,22 +275,20 @@
             localScore = 0;
             lastSyncedScore = 0;
             
-            // 데이터베이스 저장 권한 에러 방어막 추가
             try {
                 const myPlayerRef = doc(playersColRef, window.myUid);
                 await setDoc(myPlayerRef, { name: name, score: 0 }, { merge: true });
             } catch(e) {
                 console.error("Player save error", e);
-                alert("데이터베이스 접근 권한이 없습니다. 파이어베이스 보안 규칙을 확인하세요.");
-                return; // 에러 시 화면 안 넘어가게 방어
+                alert("데이터베이스 접근 권한이 없습니다. 인터넷 환경을 확인해주세요.");
+                return; 
             }
             
             switchScreen('screen-player');
             startScoreSync();
-            setupTapListener(); // 버튼 리스너 안전 등록
+            setupTapListener(); 
         };
 
-        // 광클 이벤트 리스너를 요소가 확실히 존재할 때 안전하게 등록
         function setupTapListener() {
             const tapBtn = document.getElementById('btn-tap');
             if(tapBtn) {
@@ -290,7 +299,6 @@
                         document.getElementById('p-my-score').innerText = localScore;
                     }
                 };
-                // 중복 등록 방지를 위해 기존 이벤트 클리어 후 등록
                 tapBtn.removeEventListener('touchstart', handleTap);
                 tapBtn.removeEventListener('mousedown', handleTap);
                 tapBtn.addEventListener('touchstart', handleTap, {passive: false});
