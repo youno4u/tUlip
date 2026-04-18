@@ -76,7 +76,6 @@
             <!-- 광클 (행위 언약) 상태 -->
             <div id="p-state-grind" class="hidden flex-col items-center w-full">
                 <h2 class="text-2xl font-black text-red-600 mb-8 animate-pulse">🔥 점수를 올려라! 🔥</h2>
-                <!-- touchstart 이벤트를 사용하여 광클 반응성 극대화 -->
                 <button id="btn-tap" class="tap-btn w-64 h-64 bg-gradient-to-b from-red-500 to-red-700 rounded-full shadow-[0_10px_0_rgb(153,27,27)] active:shadow-[0_0px_0_rgb(153,27,27)] active:translate-y-[10px] text-white font-black text-4xl border-4 border-red-800 flex flex-col items-center justify-center select-none">
                     <i class="fas fa-hand-pointer text-5xl mb-2 opacity-80"></i>
                     TAP!
@@ -99,7 +98,6 @@
 
             <!-- 무조건적 선택 (결과) 상태 -->
             <div id="p-state-election" class="hidden flex-col items-center text-center w-full p-8 rounded-3xl shadow-2xl border-4">
-                <!-- JS에서 선택 여부에 따라 디자인을 주입합니다. -->
             </div>
         </div>
     </div>
@@ -112,7 +110,6 @@
         </header>
         
         <div class="p-4 flex-grow grid grid-cols-1 lg:grid-cols-2 gap-6 pb-24">
-            
             <!-- GM 컨트롤 패널 -->
             <div class="bg-white p-6 rounded-3xl shadow-lg border-t-8 border-purple-600 flex flex-col">
                 <h2 class="font-black text-2xl text-slate-800 mb-2">🎮 게임 컨트롤</h2>
@@ -128,9 +125,7 @@
                     <button onclick="executeElection()" class="w-full py-6 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 font-black text-2xl rounded-2xl shadow-lg border-2 border-yellow-400 mt-4">
                         3. 무조건적 선택 (랜덤 구원)
                     </button>
-                    
                     <div class="h-px bg-slate-200 my-2"></div>
-                    
                     <button onclick="grantGraceToAll()" class="w-full py-4 bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-black text-lg rounded-2xl shadow-lg">
                         (옵션) 4. 십자가의 보혈 (전원 은혜 구원)
                     </button>
@@ -142,21 +137,16 @@
                 <h2 class="font-black text-xl border-b-2 border-slate-100 pb-4 mb-4 flex justify-between items-center">
                     <span>👥 접속자 (<span id="gm-player-count">0</span>명)</span>
                 </h2>
-                
-                <div id="gm-player-list" class="flex-grow overflow-y-auto space-y-2 max-h-[400px]">
-                    <!-- JS renders player rows -->
-                </div>
+                <div id="gm-player-list" class="flex-grow overflow-y-auto space-y-2 max-h-[400px]"></div>
             </div>
         </div>
     </div>
 
-    <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // 🚨 파이어베이스 설정 🚨
         const myFirebaseConfig = {
             apiKey: "AIzaSyCfyjgtiDVD4Wsd9iGb9tEdrOGFYxxN2Tw",
             authDomain: "kingdomgenius.firebaseapp.com",
@@ -176,7 +166,7 @@
         } else {
             app = initializeApp(myFirebaseConfig); db = getFirestore(app);
             stateDocRef = doc(db, 'kingdom_genius_games', 'tulip_u_room', 'data', 'state');
-            playersColRef = collection(db, 'kingdom_genius_games', 'tulip_u_room', 'data', 'players'); // Legacy fallback
+            playersColRef = collection(db, 'kingdom_genius_games', 'tulip_u_room', 'data', 'players');
         }
         auth = getAuth(app);
 
@@ -184,11 +174,11 @@
         window.gameState = { phase: 'lobby', selectedUids: [] };
         window.playersData = {}; 
         
-        // 💡 40명 동시 접속 최적화: 로컬에서 점수를 모았다가 1초마다 서버에 전송
         let localScore = 0;
         let lastSyncedScore = 0;
         let syncInterval = null;
 
+        // 💡 해결 1: 무한 로딩 버그 방지를 위해 즉시 실행하도록 타이밍을 맞춤
         const initAuth = async () => {
             try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -196,10 +186,22 @@
                 } else {
                     await signInAnonymously(auth);
                 }
-            } catch (error) { console.error("Auth error:", error); }
+            } catch (error) { 
+                console.error("Auth error:", error); 
+                // 💡 해결 2: 에러 발생 시 무한 로딩 대신 화면에 원인을 표시해줌
+                document.getElementById('loading-overlay').innerHTML = `
+                    <div class="bg-slate-800 p-8 rounded-2xl text-center border-4 border-red-500 shadow-2xl max-w-sm">
+                        <i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-4"></i>
+                        <h2 class="text-2xl font-bold text-red-400 mb-2">접속 오류</h2>
+                        <p class="text-sm text-slate-300">파이어베이스 '익명 로그인' 설정이<br>비활성화되어 있거나 차단되었습니다.</p>
+                        <p class="text-xs text-slate-500 mt-4 break-all">${error.message}</p>
+                    </div>
+                `;
+            }
         };
 
-        window.addEventListener('DOMContentLoaded', initAuth);
+        // DOMContentLoaded 이벤트를 기다리지 않고 바로 인증 시작! (가장 중요한 수정)
+        initAuth();
 
         onAuthStateChanged(auth, (user) => {
             if (user) { 
@@ -212,35 +214,21 @@
 
         async function setupRealtimeListeners(user) {
             if (!user) return;
-            
-            // 1. 상태(Phase) 리스너
             onSnapshot(stateDocRef, (docSnap) => {
                 if (docSnap.exists()) { 
-                    window.gameState = docSnap.data(); 
-                    updateUIBasedOnRole(); 
-                } else {
-                    // 최초 문서 생성
-                    setDoc(stateDocRef, { phase: 'lobby', selectedUids: [] });
-                }
+                    window.gameState = docSnap.data(); updateUIBasedOnRole(); 
+                } else { setDoc(stateDocRef, { phase: 'lobby', selectedUids: [] }); }
             }, (error) => console.error("State sync error:", error));
 
-            // 2. 플레이어 데이터 리스너 (40명 동기화)
             onSnapshot(playersColRef, (querySnapshot) => {
                 window.playersData = {};
-                querySnapshot.forEach((doc) => {
-                    window.playersData[doc.id] = doc.data();
-                });
+                querySnapshot.forEach((doc) => { window.playersData[doc.id] = doc.data(); });
                 updateUIBasedOnRole();
             }, (error) => console.error("Players sync error:", error));
         }
 
         window.switchScreen = (id) => { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); };
-
-        window.checkGMAndSetRole = () => {
-            const pwd = prompt("GM 비밀번호를 입력하세요 (기본 1004):");
-            if (pwd === "1004") { window.myRole = 'gm'; switchScreen('screen-gm'); updateUIBasedOnRole(); } 
-        };
-
+        window.checkGMAndSetRole = () => { const pwd = prompt("GM 비밀번호를 입력하세요 (기본 1004):"); if (pwd === "1004") { window.myRole = 'gm'; switchScreen('screen-gm'); updateUIBasedOnRole(); } };
         window.showPlayerLogin = () => { document.getElementById('player-name-modal').classList.remove('hidden'); };
 
         window.joinAsPlayer = async () => {
@@ -248,34 +236,17 @@
             if(!name) return alert("이름을 입력하세요.");
             document.getElementById('player-name-modal').classList.add('hidden');
             window.myRole = 'player';
-            
-            // 초기 데이터 세팅
-            localScore = 0;
-            lastSyncedScore = 0;
+            localScore = 0; lastSyncedScore = 0;
             const myPlayerRef = doc(playersColRef, window.myUid);
             await setDoc(myPlayerRef, { name: name, score: 0 }, { merge: true });
-            
             switchScreen('screen-player');
-            startScoreSync(); // 주기적 점수 동기화 시작
+            startScoreSync();
         };
 
-        // 💡 광클 이벤트 처리 (빠른 반응을 위해 touchstart 사용)
         const tapBtn = document.getElementById('btn-tap');
-        tapBtn.addEventListener('touchstart', (e) => {
-            e.preventDefault(); // 더블 탭 줌 방지
-            if(window.gameState.phase === 'grind') {
-                localScore += 1;
-                document.getElementById('p-my-score').innerText = localScore;
-            }
-        });
-        tapBtn.addEventListener('mousedown', (e) => { // PC 테스트용
-            if(window.gameState.phase === 'grind') {
-                localScore += 1;
-                document.getElementById('p-my-score').innerText = localScore;
-            }
-        });
+        tapBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if(window.gameState.phase === 'grind') { localScore += 1; document.getElementById('p-my-score').innerText = localScore; } });
+        tapBtn.addEventListener('mousedown', (e) => { if(window.gameState.phase === 'grind') { localScore += 1; document.getElementById('p-my-score').innerText = localScore; } });
 
-        // 💡 서버 과부하 방지: 1초마다 점수 변경사항만 서버에 보냄
         function startScoreSync() {
             if(syncInterval) clearInterval(syncInterval);
             syncInterval = setInterval(() => {
@@ -292,9 +263,6 @@
             if(window.myRole === 'gm') updateGMUI();
         }
 
-        // ==========================================
-        // PLAYER UI
-        // ==========================================
         function updatePlayerUI() {
             const phase = window.gameState.phase;
             const isElected = (window.gameState.selectedUids || []).includes(window.myUid);
@@ -305,120 +273,71 @@
             document.getElementById('p-state-election').classList.add('hidden');
 
             if (phase === 'lobby') {
-                document.getElementById('p-state-lobby').classList.remove('hidden');
-                document.getElementById('p-state-lobby').classList.add('flex');
-            } 
-            else if (phase === 'grind') {
-                document.getElementById('p-state-grind').classList.remove('hidden');
-                document.getElementById('p-state-grind').classList.add('flex');
-            } 
-            else if (phase === 'law') {
-                document.getElementById('p-state-law').classList.remove('hidden');
-                document.getElementById('p-state-law').classList.add('flex');
+                document.getElementById('p-state-lobby').classList.remove('hidden'); document.getElementById('p-state-lobby').classList.add('flex');
+            } else if (phase === 'grind') {
+                document.getElementById('p-state-grind').classList.remove('hidden'); document.getElementById('p-state-grind').classList.add('flex');
+            } else if (phase === 'law') {
+                document.getElementById('p-state-law').classList.remove('hidden'); document.getElementById('p-state-law').classList.add('flex');
                 document.getElementById('p-law-my-score').innerText = localScore + " 점";
-            } 
-            else if (phase === 'election' || phase === 'grace') {
+            } else if (phase === 'election' || phase === 'grace') {
                 const elBox = document.getElementById('p-state-election');
-                elBox.classList.remove('hidden');
-                elBox.classList.add('flex');
-
-                // 무조건적 선택 연출!
+                elBox.classList.remove('hidden'); elBox.classList.add('flex');
                 if (isElected || phase === 'grace') {
-                    // 선택 받음
                     elBox.className = "flex flex-col items-center text-center w-full p-8 rounded-3xl shadow-2xl border-4 bg-yellow-100 border-yellow-400";
                     elBox.innerHTML = `
                         <i class="fas fa-crown text-7xl text-yellow-500 mb-6 animate-bounce"></i>
                         <h2 class="text-3xl font-black text-slate-800 mb-4 leading-tight">은혜로<br>선택받았습니다!</h2>
                         <div class="bg-white p-4 rounded-xl border border-yellow-300 w-full mb-4">
-                            <div class="text-slate-400 text-sm font-bold">당신의 공로 점수</div>
-                            <div class="text-xl font-bold text-slate-400 line-through">${localScore} 점</div>
-                            <div class="text-sm text-red-500 font-bold mt-1">(점수는 아무 상관이 없었습니다)</div>
+                            <div class="text-slate-400 text-sm font-bold">당신의 공로 점수</div><div class="text-xl font-bold text-slate-400 line-through">${localScore} 점</div><div class="text-sm text-red-500 font-bold mt-1">(점수는 아무 상관이 없었습니다)</div>
                         </div>
-                        <p class="text-slate-600 font-bold text-lg">자격 없는 자에게 주어지는<br>왕의 무조건적인 초대입니다.</p>
-                    `;
+                        <p class="text-slate-600 font-bold text-lg">자격 없는 자에게 주어지는<br>왕의 무조건적인 초대입니다.</p>`;
                 } else {
-                    // 선택 받지 못함 (불만 유도)
                     elBox.className = "flex flex-col items-center text-center w-full p-8 rounded-3xl shadow-2xl border-4 bg-slate-800 border-slate-600";
                     elBox.innerHTML = `
                         <i class="fas fa-user-slash text-7xl text-slate-500 mb-6"></i>
                         <h2 class="text-3xl font-black text-white mb-4">선택받지 못했습니다</h2>
                         <div class="bg-slate-900 p-4 rounded-xl border border-slate-700 w-full mb-4">
-                            <div class="text-slate-500 text-sm font-bold">내가 열심히 쌓은 점수</div>
-                            <div class="text-2xl font-black text-yellow-500">${localScore} 점</div>
-                            <div class="text-sm text-red-400 font-bold mt-1">"아니, 내가 점수가 더 높은데 왜!!"</div>
+                            <div class="text-slate-500 text-sm font-bold">내가 열심히 쌓은 점수</div><div class="text-2xl font-black text-yellow-500">${localScore} 점</div><div class="text-sm text-red-400 font-bold mt-1">"아니, 내가 점수가 더 높은데 왜!!"</div>
                         </div>
-                        <p class="text-slate-400 font-bold">선택은 오직 왕의 주권에 달렸습니다.</p>
-                    `;
+                        <p class="text-slate-400 font-bold">선택은 오직 왕의 주권에 달렸습니다.</p>`;
                 }
             }
         }
 
-        // ==========================================
-        // GM UI
-        // ==========================================
         function updateGMUI() {
             const phase = window.gameState.phase;
             const pKeys = Object.keys(window.playersData || {});
-            
             document.getElementById('gm-player-count').innerText = pKeys.length;
-            
             const phaseNames = { lobby:'대기 중', grind:'광클 경쟁 진행 중', law:'절망 (기준 미달)', election:'선택 결과 발표됨', grace:'전원 은혜 구원' };
             document.getElementById('gm-current-phase').innerText = phaseNames[phase] || phase;
-
-            // 참가자 리스트 렌더링 (실시간 점수 표시)
             const list = document.getElementById('gm-player-list');
             list.innerHTML = '';
-            
-            // 점수순 정렬
             let ranking = pKeys.map(uid => ({ id: uid, name: window.playersData[uid].name, score: window.playersData[uid].score || 0 }));
             ranking.sort((a,b) => b.score - a.score);
-
             ranking.forEach((p, idx) => {
                 const isSelected = (window.gameState.selectedUids || []).includes(p.id) || phase === 'grace';
                 const badge = isSelected && (phase === 'election' || phase === 'grace') ? '<span class="bg-yellow-400 text-black px-2 py-1 rounded text-xs font-black">👑 선택됨</span>' : '';
                 const bg = isSelected && (phase === 'election' || phase === 'grace') ? 'bg-yellow-50 border-yellow-300' : 'bg-slate-50 border-slate-200';
-                
-                list.innerHTML += `
-                    <div class="p-3 rounded-xl flex justify-between items-center border ${bg}">
-                        <div class="font-black text-slate-800"><span class="text-slate-400 text-xs mr-2">${idx+1}위</span>${p.name}</div>
-                        <div class="flex items-center">
-                            <span class="text-sm font-bold text-red-600 mr-3">${p.score}점</span>
-                            ${badge}
-                        </div>
-                    </div>
-                `;
+                list.innerHTML += `<div class="p-3 rounded-xl flex justify-between items-center border ${bg}"><div class="font-black text-slate-800"><span class="text-slate-400 text-xs mr-2">${idx+1}위</span>${p.name}</div><div class="flex items-center"><span class="text-sm font-bold text-red-600 mr-3">${p.score}점</span>${badge}</div></div>`;
             });
         }
 
-        // GM 액션 함수들
-        window.setPhase = async (newPhase) => {
-            await setDoc(stateDocRef, { phase: newPhase }, { merge: true });
-        };
-
+        window.setPhase = async (newPhase) => { await setDoc(stateDocRef, { phase: newPhase }, { merge: true }); };
         window.executeElection = async () => {
             const pKeys = Object.keys(window.playersData || {});
             if(pKeys.length === 0) return alert("참가자가 없습니다!");
-
-            // 무작위로 30% 정도만 선택 (점수 무관!)
             const shuffled = [...pKeys].sort(() => 0.5 - Math.random());
-            const selectCount = Math.max(1, Math.floor(pKeys.length * 0.3)); // 최소 1명, 약 30%
+            const selectCount = Math.max(1, Math.floor(pKeys.length * 0.3));
             const chosen = shuffled.slice(0, selectCount);
-
             await setDoc(stateDocRef, { phase: 'election', selectedUids: chosen }, { merge: true });
         };
-
-        window.grantGraceToAll = async () => {
-            await setDoc(stateDocRef, { phase: 'grace' }, { merge: true });
-        };
-
+        window.grantGraceToAll = async () => { await setDoc(stateDocRef, { phase: 'grace' }, { merge: true }); };
         window.resetGame = async () => {
             if(confirm("모든 데이터를 지울까요? (주의: 참가자 데이터도 날아갑니다)")) {
                 await setDoc(stateDocRef, { phase: 'lobby', selectedUids: [] });
-                // 컬렉션 삭제는 클라이언트에서 어려우므로 상태만 리셋. (현실적으로는 재접속 유도)
                 alert("초기화 완료. 참가자들에게 새로고침을 요청하세요.");
             }
         };
-
     </script>
 </body>
 </html>
