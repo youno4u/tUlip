@@ -73,9 +73,14 @@
                 <p class="text-slate-500 mt-2">곧 게임이 시작됩니다.</p>
             </div>
 
+            <!-- 🔥 타이머가 추가된 광클 화면 🔥 -->
             <div id="p-state-grind" class="hidden flex-col items-center w-full">
-                <h2 class="text-2xl font-black text-red-600 mb-8 animate-pulse">🔥 점수를 올려라! 🔥</h2>
-                <button id="btn-tap" class="tap-btn w-64 h-64 bg-gradient-to-b from-red-500 to-red-700 rounded-full shadow-[0_10px_0_rgb(153,27,27)] active:shadow-[0_0px_0_rgb(153,27,27)] active:translate-y-[10px] text-white font-black text-4xl border-4 border-red-800 flex flex-col items-center justify-center select-none">
+                <div class="bg-white px-6 py-3 rounded-full shadow-md border-2 border-red-200 mb-6 flex items-center">
+                    <span class="text-xl font-bold text-slate-600">남은 시간:</span> 
+                    <span id="p-timer-display" class="text-4xl font-black text-red-600 ml-2 w-16 text-center">30</span>
+                    <span class="text-xl font-bold text-red-600">초</span>
+                </div>
+                <button id="btn-tap" class="tap-btn w-64 h-64 bg-gradient-to-b from-red-500 to-red-700 rounded-full shadow-[0_10px_0_rgb(153,27,27)] active:shadow-[0_0px_0_rgb(153,27,27)] active:translate-y-[10px] text-white font-black text-4xl border-4 border-red-800 flex flex-col items-center justify-center select-none transition-all duration-300">
                     <i class="fas fa-hand-pointer text-5xl mb-2 opacity-80"></i>
                     TAP!
                 </button>
@@ -113,7 +118,7 @@
                 
                 <div class="space-y-4 flex-grow flex flex-col">
                     <button onclick="setPhase('grind')" class="w-full py-5 bg-red-100 hover:bg-red-200 text-red-800 font-black text-xl rounded-2xl shadow border-2 border-red-300">
-                        1. 행위 언약 (광클 경쟁 시작)
+                        1. 행위 언약 (30초 광클 경쟁 시작)
                     </button>
                     <button onclick="setPhase('law')" class="w-full py-5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-black text-xl rounded-2xl shadow border-2 border-slate-400">
                         2. 율법의 기준 (경쟁 중지 & 절망)
@@ -161,14 +166,13 @@
             playersColRef = collection(db, 'artifacts', appId, 'public', 'data', 'tulip_players');
         } else {
             app = initializeApp(myFirebaseConfig); db = getFirestore(app);
-            // 🔥 수정한 부분: 경로 세그먼트를 맞춰 에러를 완전히 해결했습니다. 🔥
             stateDocRef = doc(db, 'kingdom_genius_games', 'tulip_u_room', 'data', 'state');
             playersColRef = collection(db, 'kingdom_genius_games', 'tulip_u_room', 'players');
         }
         auth = getAuth(app);
 
         window.myUid = null; window.myRole = null; 
-        window.gameState = { phase: 'lobby', selectedUids: [] };
+        window.gameState = { phase: 'lobby', selectedUids: [], grindEndTime: null };
         window.playersData = {}; 
         
         let localScore = 0;
@@ -225,7 +229,7 @@
             initAuth();
             setTimeout(() => {
                 const overlay = document.getElementById('loading-overlay');
-                if (overlay && !overlay.classList.contains('hidden')) {
+                if (overlay && !overlay.classList.contains('hidden') && !overlay.innerHTML.includes('해결방법')) {
                     showAuthError("접속 시간 초과 (10초): 파이어베이스 설정이 올바른지 확인해주세요!");
                 }
             }, 10000);
@@ -263,9 +267,11 @@
             if(target) target.classList.add('active'); 
         };
 
+        // 🔥 비밀번호 힌트 문구 제거 🔥
         window.checkGMAndSetRole = () => {
-            const pwd = prompt("GM 비밀번호를 입력하세요 (기본 1004):");
+            const pwd = prompt("GM 비밀번호를 입력하세요:");
             if (pwd === "1004") { window.myRole = 'gm'; switchScreen('screen-gm'); updateUIBasedOnRole(); } 
+            else if (pwd !== null) alert("비밀번호가 틀렸습니다.");
         };
 
         window.showPlayerLogin = () => { 
@@ -301,8 +307,12 @@
                 const handleTap = (e) => {
                     if(e) e.preventDefault();
                     if(window.gameState.phase === 'grind') {
-                        localScore += 1;
-                        document.getElementById('p-my-score').innerText = localScore;
+                        // 남은 시간이 있을 때만 클릭 인정
+                        let timeLeft = window.gameState.grindEndTime ? Math.max(0, Math.ceil((window.gameState.grindEndTime - Date.now()) / 1000)) : 0;
+                        if(timeLeft > 0) {
+                            localScore += 1;
+                            document.getElementById('p-my-score').innerText = localScore;
+                        }
                     }
                 };
                 tapBtn.removeEventListener('touchstart', handleTap);
@@ -311,6 +321,29 @@
                 tapBtn.addEventListener('mousedown', handleTap);
             }
         }
+
+        // 🔥 클라이언트에서 100ms마다 타이머를 업데이트 하는 로직 🔥
+        setInterval(() => {
+            if (window.gameState && window.gameState.phase === 'grind' && window.gameState.grindEndTime) {
+                let timeLeft = Math.max(0, Math.ceil((window.gameState.grindEndTime - Date.now()) / 1000));
+                
+                // 참가자 UI 업데이트
+                if(window.myRole === 'player') {
+                    const pTimer = document.getElementById('p-timer-display');
+                    if (pTimer) pTimer.innerText = timeLeft;
+                    
+                    const tapBtn = document.getElementById('btn-tap');
+                    if (tapBtn) {
+                        if (timeLeft <= 0) {
+                            // 0초가 되면 버튼 잠금 (흑백 & 반투명)
+                            tapBtn.classList.add('opacity-50', 'grayscale', 'cursor-not-allowed');
+                        } else {
+                            tapBtn.classList.remove('opacity-50', 'grayscale', 'cursor-not-allowed');
+                        }
+                    }
+                }
+            }
+        }, 100);
 
         function startScoreSync() {
             if(syncInterval) clearInterval(syncInterval);
@@ -418,7 +451,14 @@
 
         window.setPhase = async (newPhase) => {
             try {
-                await setDoc(stateDocRef, { phase: newPhase }, { merge: true });
+                let updates = { phase: newPhase };
+                
+                // 🔥 광클 단계가 시작되면 종료 시간을 30초 뒤로 세팅합니다.
+                if(newPhase === 'grind') {
+                    updates.grindEndTime = Date.now() + 30000;
+                }
+                
+                await setDoc(stateDocRef, updates, { merge: true });
             } catch(e) { console.error(e); alert("상태 변경 에러!"); }
         };
 
@@ -444,7 +484,7 @@
         window.resetGame = async () => {
             if(confirm("모든 데이터를 지울까요? (주의: 참가자 데이터도 날아갑니다)")) {
                 try {
-                    await setDoc(stateDocRef, { phase: 'lobby', selectedUids: [] });
+                    await setDoc(stateDocRef, { phase: 'lobby', selectedUids: [] }, { merge: false });
                     alert("초기화 완료. 참가자들에게 새로고침을 요청하세요.");
                 } catch(e) { console.error(e); }
             }
