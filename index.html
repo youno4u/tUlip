@@ -11,8 +11,11 @@
         body { font-family: 'Noto Sans KR', sans-serif; background-color: #f8fafc; touch-action: manipulation; user-select: none; }
         .screen { display: none !important; }
         .screen.active { display: flex !important; flex-direction: column; flex-grow: 1; position: relative; min-height: 100vh; }
+        
+        /* 광클 버튼 애니메이션 */
         .tap-btn { transition: transform 0.05s; }
         .tap-btn:active { transform: scale(0.95); }
+        
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
@@ -31,6 +34,7 @@
         <div class="bg-white p-8 rounded-3xl shadow-2xl max-w-md w-full text-center border border-purple-200">
             <h1 class="text-4xl font-black text-purple-800 mb-2">무조건적 선택</h1>
             <h2 class="text-xl font-bold text-slate-600 mb-8">Unconditional Election</h2>
+            
             <div class="space-y-4">
                 <button onclick="showPlayerLogin()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-black py-5 rounded-2xl shadow-lg transition text-xl">
                     <i class="fas fa-mobile-alt mr-2"></i> 참가자 입장
@@ -151,39 +155,39 @@
         let app, auth, db, stateDocRef, playersColRef;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-        // ✅ 수정됨: 경로 세그먼트 홀수/짝수 규칙 준수
         if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-            app = initializeApp(JSON.parse(__firebase_config));
-            db = getFirestore(app);
+            app = initializeApp(JSON.parse(__firebase_config)); db = getFirestore(app);
             stateDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'tulip_state', 'main');
             playersColRef = collection(db, 'artifacts', appId, 'public', 'data', 'tulip_players');
         } else {
-            app = initializeApp(myFirebaseConfig);
-            db = getFirestore(app);
-            stateDocRef = doc(db, 'tulip_game', 'state');       // ✅ 짝수(2개)
-            playersColRef = collection(db, 'tulip_players');     // ✅ 홀수(1개)
+            app = initializeApp(myFirebaseConfig); db = getFirestore(app);
+            // 🔥 수정한 부분: 경로 세그먼트를 맞춰 에러를 완전히 해결했습니다. 🔥
+            stateDocRef = doc(db, 'kingdom_genius_games', 'tulip_u_room', 'data', 'state');
+            playersColRef = collection(db, 'kingdom_genius_games', 'tulip_u_room', 'players');
         }
         auth = getAuth(app);
 
-        window.myUid = null;
-        window.myRole = null; 
+        window.myUid = null; window.myRole = null; 
         window.gameState = { phase: 'lobby', selectedUids: [] };
         window.playersData = {}; 
         
         let localScore = 0;
         let lastSyncedScore = 0;
         let syncInterval = null;
+        let stateUnsub = null;
+        let playersUnsub = null;
 
         function showAuthError(msg) {
             const overlay = document.getElementById('loading-overlay');
-            if (overlay) {
+            if(overlay) {
                 overlay.innerHTML = `
                     <div class="bg-slate-800 p-8 rounded-2xl text-center border-4 border-red-500 shadow-2xl max-w-sm">
                         <i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-4"></i>
                         <h2 class="text-2xl font-bold text-red-400 mb-2">접속 오류</h2>
-                        <p class="text-sm text-slate-300">인터넷 창의 캐시를 삭제하거나,<br>새로고침을 한 번 더 해주세요.</p>
+                        <p class="text-sm text-slate-300">파이어베이스 '익명 로그인' 설정이<br>비활성화되어 있거나 차단되었습니다.</p>
+                        <p class="text-xs text-yellow-400 mt-2 font-bold">[해결방법]</p>
+                        <p class="text-xs text-slate-300">Firebase 콘솔 > Authentication > Sign-in method 메뉴에서 '익명(Anonymous)'을 사용 설정해주세요.</p>
                         <p class="text-xs text-slate-500 mt-4 break-all">${msg}</p>
-                        <button onclick="location.reload()" class="mt-6 bg-purple-600 text-white px-6 py-3 rounded-xl font-bold">새로고침</button>
                     </div>
                 `;
             }
@@ -191,53 +195,60 @@
 
         const initAuth = async () => {
             try {
-                document.getElementById('loading-msg').innerText = "인증을 진행합니다...";
+                const overlay = document.getElementById('loading-overlay');
+                const msg = document.getElementById('loading-msg');
+                if(overlay) overlay.classList.remove('hidden');
+                if(msg) msg.innerText = "보안 인증을 진행합니다...";
+
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
                     await signInAnonymously(auth);
                 }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        window.myUid = user.uid;
+                        if(overlay) overlay.classList.add('hidden');
+                        switchScreen('screen-login');
+                        setupRealtimeListeners(user);
+                    }
+                });
+
             } catch (error) { 
                 console.error("Auth error:", error); 
                 showAuthError(error.message);
             }
         };
 
-        // ✅ 10초 타임아웃 안전망
-        setTimeout(() => {
-            const overlay = document.getElementById('loading-overlay');
-            if (overlay && !overlay.classList.contains('hidden')) {
-                showAuthError("타임아웃: Firebase 익명 인증 활성화 여부 및 승인된 도메인을 확인하세요.");
-            }
-        }, 10000);
-
-        initAuth();
-
-        onAuthStateChanged(auth, (user) => {
-            if (user) { 
-                window.myUid = user.uid; 
+        window.addEventListener('DOMContentLoaded', () => {
+            initAuth();
+            setTimeout(() => {
                 const overlay = document.getElementById('loading-overlay');
-                if (overlay) overlay.classList.add('hidden'); 
-                switchScreen('screen-login'); 
-                setupRealtimeListeners(user); 
-            }
+                if (overlay && !overlay.classList.contains('hidden')) {
+                    showAuthError("접속 시간 초과 (10초): 파이어베이스 설정이 올바른지 확인해주세요!");
+                }
+            }, 10000);
         });
 
         async function setupRealtimeListeners(user) {
             if (!user) return;
             
-            onSnapshot(stateDocRef, async (docSnap) => {
+            if (stateUnsub) stateUnsub();
+            if (playersUnsub) playersUnsub();
+            
+            stateUnsub = onSnapshot(stateDocRef, async (docSnap) => {
                 if (docSnap.exists()) { 
                     window.gameState = docSnap.data(); 
                     updateUIBasedOnRole(); 
                 } else {
                     try {
-                        await setDoc(stateDocRef, { phase: 'lobby', selectedUids: [] });
+                        await setDoc(stateDocRef, { phase: 'lobby', selectedUids: [] }, { merge: true });
                     } catch(e) { console.error("초기 상태 생성 실패", e); }
                 }
             }, (error) => console.error("State sync error:", error));
 
-            onSnapshot(playersColRef, (querySnapshot) => {
+            playersUnsub = onSnapshot(playersColRef, (querySnapshot) => {
                 window.playersData = {};
                 querySnapshot.forEach((doc) => {
                     window.playersData[doc.id] = doc.data();
@@ -249,16 +260,12 @@
         window.switchScreen = (id) => { 
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); 
             const target = document.getElementById(id);
-            if (target) target.classList.add('active'); 
+            if(target) target.classList.add('active'); 
         };
 
         window.checkGMAndSetRole = () => {
             const pwd = prompt("GM 비밀번호를 입력하세요 (기본 1004):");
-            if (pwd === "1004") {
-                window.myRole = 'gm';
-                switchScreen('screen-gm');
-                updateUIBasedOnRole();
-            }
+            if (pwd === "1004") { window.myRole = 'gm'; switchScreen('screen-gm'); updateUIBasedOnRole(); } 
         };
 
         window.showPlayerLogin = () => { 
@@ -267,7 +274,7 @@
 
         window.joinAsPlayer = async () => {
             const name = document.getElementById('player-name-input').value.trim();
-            if (!name) return alert("이름을 입력하세요.");
+            if(!name) return alert("이름을 입력하세요.");
             document.getElementById('player-name-modal').classList.add('hidden');
             window.myRole = 'player';
             
@@ -279,37 +286,36 @@
                 await setDoc(myPlayerRef, { name: name, score: 0 }, { merge: true });
             } catch(e) {
                 console.error("Player save error", e);
-                alert("데이터베이스 접근 권한이 없습니다. Firebase 보안 규칙을 확인하세요.");
-                return;
+                alert("데이터베이스 접근 권한이 없습니다.");
+                return; 
             }
-
-            document.getElementById('p-my-name').innerText = name;
+            
             switchScreen('screen-player');
             startScoreSync();
-            setupTapListener();
+            setupTapListener(); 
         };
 
         function setupTapListener() {
             const tapBtn = document.getElementById('btn-tap');
-            if (tapBtn) {
+            if(tapBtn) {
                 const handleTap = (e) => {
-                    if (e) e.preventDefault();
-                    if (window.gameState.phase === 'grind') {
+                    if(e) e.preventDefault();
+                    if(window.gameState.phase === 'grind') {
                         localScore += 1;
                         document.getElementById('p-my-score').innerText = localScore;
                     }
                 };
                 tapBtn.removeEventListener('touchstart', handleTap);
                 tapBtn.removeEventListener('mousedown', handleTap);
-                tapBtn.addEventListener('touchstart', handleTap, { passive: false });
+                tapBtn.addEventListener('touchstart', handleTap, {passive: false});
                 tapBtn.addEventListener('mousedown', handleTap);
             }
         }
 
         function startScoreSync() {
-            if (syncInterval) clearInterval(syncInterval);
+            if(syncInterval) clearInterval(syncInterval);
             syncInterval = setInterval(() => {
-                if (localScore !== lastSyncedScore && window.myRole === 'player' && window.gameState.phase === 'grind') {
+                if(localScore !== lastSyncedScore && window.myRole === 'player' && window.gameState.phase === 'grind') {
                     const myPlayerRef = doc(playersColRef, window.myUid);
                     setDoc(myPlayerRef, { score: localScore }, { merge: true }).catch(e => console.error(e));
                     lastSyncedScore = localScore;
@@ -318,9 +324,9 @@
         }
 
         function updateUIBasedOnRole() {
-            if (!window.gameState) return;
-            if (window.myRole === 'player') updatePlayerUI();
-            if (window.myRole === 'gm') updateGMUI();
+            if(!window.gameState) return;
+            if(window.myRole === 'player') updatePlayerUI();
+            if(window.myRole === 'gm') updateGMUI();
         }
 
         function updatePlayerUI() {
@@ -335,14 +341,17 @@
             if (phase === 'lobby') {
                 document.getElementById('p-state-lobby').classList.remove('hidden');
                 document.getElementById('p-state-lobby').classList.add('flex');
-            } else if (phase === 'grind') {
+            } 
+            else if (phase === 'grind') {
                 document.getElementById('p-state-grind').classList.remove('hidden');
                 document.getElementById('p-state-grind').classList.add('flex');
-            } else if (phase === 'law') {
+            } 
+            else if (phase === 'law') {
                 document.getElementById('p-state-law').classList.remove('hidden');
                 document.getElementById('p-state-law').classList.add('flex');
                 document.getElementById('p-law-my-score').innerText = localScore + " 점";
-            } else if (phase === 'election' || phase === 'grace') {
+            } 
+            else if (phase === 'election' || phase === 'grace') {
                 const elBox = document.getElementById('p-state-election');
                 elBox.classList.remove('hidden');
                 elBox.classList.add('flex');
@@ -381,33 +390,19 @@
             
             document.getElementById('gm-player-count').innerText = pKeys.length;
             
-            const phaseNames = {
-                lobby: '대기 중',
-                grind: '광클 경쟁 진행 중',
-                law: '절망 (기준 미달)',
-                election: '선택 결과 발표됨',
-                grace: '전원 은혜 구원'
-            };
+            const phaseNames = { lobby:'대기 중', grind:'광클 경쟁 진행 중', law:'절망 (기준 미달)', election:'선택 결과 발표됨', grace:'전원 은혜 구원' };
             document.getElementById('gm-current-phase').innerText = phaseNames[phase] || phase;
 
             const list = document.getElementById('gm-player-list');
             list.innerHTML = '';
             
-            let ranking = pKeys.map(uid => ({
-                id: uid,
-                name: window.playersData[uid].name,
-                score: window.playersData[uid].score || 0
-            }));
-            ranking.sort((a, b) => b.score - a.score);
+            let ranking = pKeys.map(uid => ({ id: uid, name: window.playersData[uid].name, score: window.playersData[uid].score || 0 }));
+            ranking.sort((a,b) => b.score - a.score);
 
             ranking.forEach((p, idx) => {
                 const isSelected = (window.gameState.selectedUids || []).includes(p.id) || phase === 'grace';
-                const badge = isSelected && (phase === 'election' || phase === 'grace')
-                    ? '<span class="bg-yellow-400 text-black px-2 py-1 rounded text-xs font-black">👑 선택됨</span>'
-                    : '';
-                const bg = isSelected && (phase === 'election' || phase === 'grace')
-                    ? 'bg-yellow-50 border-yellow-300'
-                    : 'bg-slate-50 border-slate-200';
+                const badge = isSelected && (phase === 'election' || phase === 'grace') ? '<span class="bg-yellow-400 text-black px-2 py-1 rounded text-xs font-black">👑 선택됨</span>' : '';
+                const bg = isSelected && (phase === 'election' || phase === 'grace') ? 'bg-yellow-50 border-yellow-300' : 'bg-slate-50 border-slate-200';
                 
                 list.innerHTML += `
                     <div class="p-3 rounded-xl flex justify-between items-center border ${bg}">
@@ -429,7 +424,7 @@
 
         window.executeElection = async () => {
             const pKeys = Object.keys(window.playersData || {});
-            if (pKeys.length === 0) return alert("참가자가 없습니다!");
+            if(pKeys.length === 0) return alert("참가자가 없습니다!");
 
             const shuffled = [...pKeys].sort(() => 0.5 - Math.random());
             const selectCount = Math.max(1, Math.floor(pKeys.length * 0.3));
@@ -447,7 +442,7 @@
         };
 
         window.resetGame = async () => {
-            if (confirm("모든 데이터를 지울까요? (주의: 참가자 데이터도 날아갑니다)")) {
+            if(confirm("모든 데이터를 지울까요? (주의: 참가자 데이터도 날아갑니다)")) {
                 try {
                     await setDoc(stateDocRef, { phase: 'lobby', selectedUids: [] });
                     alert("초기화 완료. 참가자들에게 새로고침을 요청하세요.");
