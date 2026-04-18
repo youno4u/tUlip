@@ -86,15 +86,15 @@
             playersColRef = collection(db, 'artifacts', appId, 'public', 'data', 'tulip_players');
         } else {
             app = initializeApp(myFirebaseConfig); db = getFirestore(app);
+            // 🔥 수정한 부분: 경로 세그먼트를 맞춰 에러를 완전히 해결했습니다. 🔥
             stateDocRef = doc(db, 'kingdom_genius_games', 'tulip_u_room', 'data', 'state');
-            playersColRef = collection(db, 'kingdom_genius_games', 'tulip_u_room', 'data', 'players');
+            playersColRef = collection(db, 'kingdom_genius_games', 'tulip_u_room', 'players');
         }
         auth = getAuth(app);
         
         window.gameState = null;
         window.playersData = {};
 
-        // 💡 해결 1: 무한 로딩 버그 방지를 위해 즉시 실행
         const initAuth = async () => {
             try {
                 await signInAnonymously(auth);
