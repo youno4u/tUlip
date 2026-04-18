@@ -24,6 +24,13 @@
     <div id="disp-header" class="text-center w-full mt-4 mb-8">
         <h2 class="text-5xl font-black text-purple-400 drop-shadow-md mb-2 tracking-widest">행위 언약: 공로를 쌓아라!</h2>
         <p class="text-xl text-slate-400 font-bold" id="disp-subtitle">가장 많은 선행 점수를 모은 자가 천국에 들어갈 자격을 얻는다?</p>
+        
+        <!-- 🔥 송출 화면 타이머 컨테이너 🔥 -->
+        <div id="disp-timer-container" class="hidden mt-8">
+            <span class="text-5xl font-black text-white bg-red-600 px-8 py-3 rounded-full border-4 border-red-800 shadow-[0_0_30px_rgba(239,68,68,0.8)]">
+                ⏳ 남은 시간: <span id="disp-timer" class="text-6xl">30</span>초
+            </span>
+        </div>
     </div>
 
     <!-- 1. 실시간 랭킹 영역 (광클 경쟁용) -->
@@ -86,7 +93,6 @@
             playersColRef = collection(db, 'artifacts', appId, 'public', 'data', 'tulip_players');
         } else {
             app = initializeApp(myFirebaseConfig); db = getFirestore(app);
-            // 🔥 수정한 부분: 경로 세그먼트를 맞춰 에러를 완전히 해결했습니다. 🔥
             stateDocRef = doc(db, 'kingdom_genius_games', 'tulip_u_room', 'data', 'state');
             playersColRef = collection(db, 'kingdom_genius_games', 'tulip_u_room', 'players');
         }
@@ -127,6 +133,15 @@
             });
         }
 
+        // 🔥 송출 화면 타이머 업데이트 로직 🔥
+        setInterval(() => {
+            if (window.gameState && window.gameState.phase === 'grind' && window.gameState.grindEndTime) {
+                let timeLeft = Math.max(0, Math.ceil((window.gameState.grindEndTime - Date.now()) / 1000));
+                const dispTimer = document.getElementById('disp-timer');
+                if (dispTimer) dispTimer.innerText = timeLeft;
+            }
+        }, 100);
+
         function updateDisplayUI() {
             const state = window.gameState;
             if(!state) return;
@@ -137,12 +152,18 @@
             const title = document.getElementById('disp-header').querySelector('h2');
             const lawOverlay = document.getElementById('disp-law-overlay');
             const electionOverlay = document.getElementById('disp-election-overlay');
+            const timerContainer = document.getElementById('disp-timer-container');
             
             lawOverlay.classList.add('hidden');
             electionOverlay.classList.add('hidden');
 
             if(state.phase === 'lobby' || state.phase === 'grind') {
                 title.innerText = state.phase === 'lobby' ? "행위 언약: 입장 준비" : "행위 언약: 공로를 쌓아라!";
+                
+                // 타이머 노출 관리
+                if(state.phase === 'grind') timerContainer.classList.remove('hidden');
+                else timerContainer.classList.add('hidden');
+
                 let ranking = pKeys.map(uid => ({ name: window.playersData[uid].name, score: window.playersData[uid].score || 0 }));
                 ranking.sort((a,b) => b.score - a.score);
                 const top10 = ranking.slice(0, 10);
@@ -165,8 +186,10 @@
                     document.getElementById('disp-leaderboard').innerHTML = html;
                 }
             } else if(state.phase === 'law') {
+                timerContainer.classList.add('hidden');
                 lawOverlay.classList.remove('hidden'); lawOverlay.classList.add('flex');
             } else if(state.phase === 'election' || state.phase === 'grace') {
+                timerContainer.classList.add('hidden');
                 electionOverlay.classList.remove('hidden'); electionOverlay.classList.add('flex');
                 const electedIds = state.phase === 'grace' ? pKeys : (state.selectedUids || []);
                 const electedNames = electedIds.map(uid => window.playersData[uid]?.name).filter(Boolean);
